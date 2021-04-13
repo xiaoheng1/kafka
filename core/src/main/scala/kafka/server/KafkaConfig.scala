@@ -1771,6 +1771,11 @@ class KafkaConfig(val props: java.util.Map[_, _], doLog: Boolean, dynamicConfigO
   }
 
   private def getControlPlaneListenerNameAndSecurityProtocol: Option[(ListenerName, SecurityProtocol)] = {
+    // 基于 control.plane.listener.name 做匹配，有值，则创建协议.
+    // 注意：controlPlaneListener 只能配置一个.
+    // listener.security.protocol.map listener 到 protocol 的映射.
+    // listeners=PLAINTEXT://:9092
+    // istener.security.protocol.map=PLAINTEXT:PLAINTEXT,SSL:SSL,SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_SSL:SASL_SSL
     Option(getString(KafkaConfig.ControlPlaneListenerNameProp)) match {
       case Some(name) =>
         val listenerName = ListenerName.normalised(name)

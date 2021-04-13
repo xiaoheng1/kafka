@@ -119,8 +119,21 @@ class SocketServer(val config: KafkaConfig,
    */
   def startup(startProcessingRequests: Boolean = true): Unit = {
     this.synchronized {
+      // 创建控制类 Acceptor 和 Processor.
+      // 先基于 control.plane.listener.name 做匹配，有值，则创建协议.
+      // 注意：controlPlaneListener 只能配置一个.
+      // listener.security.protocol.map listener 到 protocol 的映射.
+      // listeners=PLAINTEXT://:9092
+      // istener.security.protocol.map=PLAINTEXT:PLAINTEXT,SSL:SSL,SASL_PLAINTEXT:SASL_PLAINTEXT,SASL_SSL:SASL_SSL
+      // 对于 control plane 只有一个 acceptor, 1 个 processor, 1 个深度为 20 的请求队列.
       createControlPlaneAcceptorAndProcessor(config.controlPlaneListener)
+      // 创建 data plane acceptor 和 processor.
+      // data plane 的 processors 的数量取决于 num.network.threads 的数量. 默认是 3.
+      // 它的请求队列长度，默认是 500.
       createDataPlaneAcceptorsAndProcessors(config.numNetworkThreads, config.dataPlaneListeners)
+      // 开启 acceptor 和 processor.
+      // 但是 SocketServer 刚传入的这个参数为 false，那么 Kafka 是在哪里开启的了？
+      // 推迟到了后面.
       if (startProcessingRequests) {
         this.startProcessingRequests()
       }
@@ -678,6 +691,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
               var retriesLeft = synchronized(processors.length)
               var processor: Processor = null
               do {
+                // TODO: 可能存在并发问题.
                 retriesLeft -= 1
                 processor = synchronized {
                   // adjust the index (if necessary) and retrieve the processor atomically for
@@ -1121,6 +1135,9 @@ private[kafka] class Processor(val id: Int,
              mayBlock: Boolean,
              acceptorIdlePercentMeter: com.yammer.metrics.core.Meter): Boolean = {
     val accepted = {
+      // newConnections 长度为 20.
+      // 这个是在 processor 中的 connection queue 长度.
+      // 先每一个请求分配一个 processor, 当 processor 分配完后，再将请求放入到 processor 中的 newConnections 集合中.
       if (newConnections.offer(socketChannel))
         true
       else if (mayBlock) {
@@ -1131,6 +1148,7 @@ private[kafka] class Processor(val id: Int,
       } else
         false
     }
+    // 线程在什么情况下会阻塞？
     if (accepted)
       wakeup()
     accepted
